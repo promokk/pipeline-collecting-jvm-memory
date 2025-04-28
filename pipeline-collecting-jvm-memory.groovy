@@ -1,29 +1,30 @@
 node {
     // environment
-    // Пользователь для подключения по ssh
-    def userSSH = 'andrey'
+    // Пользователь для подключения по ssh к SERVER
+    def userSSH = 'user'
     // Сredential для подключения по ssh
-    def credentialSSH = 'jenkins-ssh-key'
+    def credentialSSH = 'credential-ssh'
     // Директория в которой будет создана временная директория для файлов (workDir)
-    def homeDir = '/home/andrey'
+    def homeDir = '/dir'
     // Временная директория в которой будут создаваться файлы
-    def workDir = 'jmeterHeapDumps'
-    // Пользователь для подключения по ssh к удаленному серверу
-    def remoteUserSSH = 'andrey'
+    def workDir = 'dirHeapDumps'
+    // Пользователь для подключения по ssh к удаленному серверу с архивами
+    def remoteUserSSH = 'user'
     // Удаленный сервер на который будет отправлен архив с файлами
-    def remoteServer = '192.168.1.112'
+    def remoteServer = '192.168.1.10'
     // Директория на сервере {remoteServer} в которую будет отправлен архив с файлами
-    def remoteServerDirPath = '/home/andrey/jmeterHeapDumps'
+    def remoteServerDirPath = '/dir'
+    // Наименование искомого процесса
+    def processName = 'processName.jar'
     // Уровень отслеживания памяти (summary / detail)
     def memoryTrackingLevel = 'detail'
-    // Массив наименований созданных heapDump
-    def heapDumpArr = []
     // Путь до workspace на сервере Jenkins
-    def workspacePath = sh(returnStdout: true, script: "pwd").trim()
+    def workspacePath = env.WORKSPACE
 
 
     try {
         properties([
+            disableConcurrentBuilds(),
             buildDiscarder(
                 logRotator(
                     artifactDaysToKeepStr: '',
@@ -62,11 +63,11 @@ node {
             ])])
 
         // environment
-        // Время сейчас в миллисекундах
+        // Время 'сейчас' в миллисекундах
         timeNow = System.currentTimeMillis()
         // Массив процессов
         try {
-            pidJmeter = sh(returnStdout: true, script: "ssh ${userSSH}@${SERVER} 'pgrep -f ApacheJMeter.jar'").trim().split('\n')
+            pidArr = sh(returnStdout: true, script: "ssh ${userSSH}@${SERVER} 'pgrep -f ${processName}'").trim().split('\n')
         } catch(Exception e) {
             error "Failed, process not found."
         }
@@ -85,13 +86,13 @@ node {
             // Вывод информации по процессам
             echo '-----------------INFO-----------------'
             def messageInfo = "Process:"
-            for (pid in pidJmeter) {
+            for (pid in pidArr) {
                 def infoPid = sh(returnStdout: true, script: "ssh ${userSSH}@${SERVER} 'jcmd ${pid} VM.system_properties | grep sun.java.command'").trim().replace('sun.java.command=', "${pid}: ")
                 messageInfo += "\n\t${infoPid}"
             }
             echo messageInfo
 
-            currentBuild.displayName = "${env.BUILD_ID}--${SERVER}"
+            currentBuild.displayName = "#${env.BUILD_ID}--${SERVER}"
             currentBuild.description = "${messageInfo}"
 
             // Создание файла с информацией по процессам
@@ -105,7 +106,7 @@ EOF
             sshagent(["${credentialSSH}"]) {
                 // Создание файлов для диагностики памяти
                 echo '-----------------CREATE FILE-----------------'
-                for (pid in pidJmeter) {
+                for (pid in pidArr) {
                     if (params.DIAGNOSEMEMORY) {
                         if (params.DIAGNOSETIME) {
                             echo 'Create Baseline Diagnose Memory Leak...'
